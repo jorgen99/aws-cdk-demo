@@ -3,11 +3,15 @@ package com.myorg;
 import static java.util.Collections.singletonList;
 import static software.amazon.awscdk.services.elasticloadbalancingv2.ListenerCertificate.fromArn;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import org.jetbrains.annotations.NotNull;
 
 import software.amazon.awscdk.core.CfnOutput;
 import software.amazon.awscdk.core.CfnOutputProps;
 import software.amazon.awscdk.core.Construct;
+import software.amazon.awscdk.core.Duration;
 import software.amazon.awscdk.core.Stack;
 import software.amazon.awscdk.core.StackProps;
 import software.amazon.awscdk.services.ec2.Vpc;
@@ -29,6 +33,13 @@ import software.amazon.awscdk.services.elasticloadbalancingv2.ApplicationProtoco
 import software.amazon.awscdk.services.elasticloadbalancingv2.BaseApplicationListenerProps;
 import software.amazon.awscdk.services.elasticloadbalancingv2.CfnListener;
 import software.amazon.awscdk.services.elasticloadbalancingv2.ListenerCertificate;
+import software.amazon.awscdk.services.lambda.Code;
+import software.amazon.awscdk.services.lambda.Function;
+import software.amazon.awscdk.services.lambda.FunctionProps;
+import software.amazon.awscdk.services.lambda.Runtime;
+import software.amazon.awscdk.services.lambda.eventsources.S3EventSource;
+import software.amazon.awscdk.services.s3.Bucket;
+import software.amazon.awscdk.services.s3.EventType;
 
 public class CdkStack extends Stack {
 
@@ -159,8 +170,25 @@ public class CdkStack extends Stack {
         "fargate_service_https_target_groups",
         AddApplicationTargetGroupsProps.builder()
             .targetGroups(singletonList(theService.getTargetGroup()))
-            .build()
-    );
+            .build());
+
+    Bucket fileEventBucket = Bucket.Builder
+        .create(this, "the_file_event_bucket")
+        .bucketName("jorgenlundberg-cdk-file-event-bucket")
+        .build();
+
+
+    Map<String, String> lambdaEnvMap = new HashMap<>();
+    lambdaEnvMap.put("SERVICE_URL", theService.getLoadBalancer().getLoadBalancerDnsName());
+    Function fileEventFunction = new Function(this, "file-event-lambda",
+        getLambdaFunctionProps(lambdaEnvMap, "com.myorg.lambda.S3FileEventLambda"));
+
+    fileEventFunction.addEventSource(
+        S3EventSource.Builder
+            .create(fileEventBucket)
+            .events(singletonList(EventType.OBJECT_CREATED))
+            //.filters()
+        .build());
 
     //Outputs
     new CfnOutput(
@@ -173,4 +201,16 @@ public class CdkStack extends Stack {
     );
 
   }
+
+  private FunctionProps getLambdaFunctionProps(Map<String, String> lambdaEnvMap, String handler) {
+    return FunctionProps.builder()
+        .code(Code.fromAsset("./asset/lambda-0.1-jar-with-dependencies.jar"))
+        .handler(handler)
+        .runtime(Runtime.JAVA_11)
+        .environment(lambdaEnvMap)
+        .timeout(Duration.seconds(30))
+        .memorySize(512)
+        .build();
+  }
+
 }

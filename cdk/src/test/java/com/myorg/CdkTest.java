@@ -3,6 +3,7 @@ package com.myorg;
 import java.io.IOException;
 import java.util.Iterator;
 
+import org.junit.Ignore;
 import org.junit.Test;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -16,6 +17,7 @@ public class CdkTest {
   private final static ObjectMapper JSON =
       new ObjectMapper().configure(SerializationFeature.INDENT_OUTPUT, true);
 
+  @Ignore
   @Test
   public void testStack() throws IOException {
     App app = new App();
