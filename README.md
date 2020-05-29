@@ -16,5 +16,5 @@ The https certificate is stored in AWS Certificate Manager.
 - DONE: Docker spring-boot REST service running in fargate.
 - DONE: http forwarding to http
 - DONE: S3 bucket with lambda event handler
-- lambda calling spring boot REST service
-- rest service saving info to DynamoDB
+- DONE: lambda calling spring boot REST service
+- DONE: rest service saving info to DynamoDB
