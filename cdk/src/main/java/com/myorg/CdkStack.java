@@ -12,8 +12,14 @@ import software.amazon.awscdk.core.CfnOutput;
 import software.amazon.awscdk.core.CfnOutputProps;
 import software.amazon.awscdk.core.Construct;
 import software.amazon.awscdk.core.Duration;
+import software.amazon.awscdk.core.RemovalPolicy;
 import software.amazon.awscdk.core.Stack;
 import software.amazon.awscdk.core.StackProps;
+import software.amazon.awscdk.services.dynamodb.Attribute;
+import software.amazon.awscdk.services.dynamodb.AttributeType;
+import software.amazon.awscdk.services.dynamodb.BillingMode;
+import software.amazon.awscdk.services.dynamodb.Table;
+import software.amazon.awscdk.services.dynamodb.TableProps;
 import software.amazon.awscdk.services.ec2.Vpc;
 import software.amazon.awscdk.services.ec2.VpcProps;
 import software.amazon.awscdk.services.ecr.IRepository;
@@ -136,6 +142,32 @@ public class CdkStack extends Stack {
         singletonList(certificate)
     );
 
+    TableProps tableProps;
+    Attribute partitionKey = Attribute.builder()
+        .name("s3Key")
+        .type(AttributeType.STRING)
+        .build();
+    Attribute sortKey = Attribute.builder()
+        .name("timestamp")
+        .type(AttributeType.NUMBER)
+        .build();
+    tableProps = TableProps.builder()
+        .tableName("fileEvent")
+        .partitionKey(partitionKey)
+        .sortKey(sortKey)
+        .billingMode(BillingMode.PAY_PER_REQUEST)
+        // The default removal policy is RETAIN, which means that cdk destroy will not attempt to delete
+        // the new table, and it will remain in your account until manually deleted. By setting the policy to
+        // DESTROY, cdk destroy will delete the table (even if it has data in it)
+        .removalPolicy(RemovalPolicy.DESTROY)
+        .build();
+    Table dynamodbTable = new Table(this, "the_file_event_table", tableProps);
+
+    Map<String, String> springBootEnvironment = new HashMap<>();
+    springBootEnvironment.put("TABLE_NAME", dynamodbTable.getTableName());
+    springBootEnvironment.put("PRIMARY_KEY", "s3Key");
+    springBootEnvironment.put("SORT_KEY", "timestamp");
+
     ApplicationLoadBalancedFargateService theService =
         new ApplicationLoadBalancedFargateService(
             this,
@@ -147,6 +179,7 @@ public class CdkStack extends Stack {
                 .taskImageOptions(
                     ApplicationLoadBalancedTaskImageOptions.builder()
                         .image(dockerImage)
+                        .environment(springBootEnvironment)
                         .containerPort(8080)
                         .build()
                 )
@@ -164,6 +197,9 @@ public class CdkStack extends Stack {
                 .build()
         );
 
+    // Grant the Fargate Service access to read and write to the Dynamo Db
+    dynamodbTable.grantReadWriteData(theService.getTaskDefinition().getTaskRole());
+
     // We need the HTTPS listener to use the same target group as the service,
     // so we set this here, after the service has been created
     httpsListener.addTargetGroups(
@@ -175,8 +211,11 @@ public class CdkStack extends Stack {
     Bucket fileEventBucket = Bucket.Builder
         .create(this, "the_file_event_bucket")
         .bucketName("jorgenlundberg-cdk-file-event-bucket")
+        // The default removal policy is RETAIN, which means that cdk destroy will not attempt to delete
+        // the bucket, and it will remain in your account until manually deleted. By setting the policy to
+        // DESTROY, cdk destroy will delete the bucket (even if it has data in it)
+        .removalPolicy(RemovalPolicy.DESTROY)
         .build();
-
 
     Map<String, String> lambdaEnvMap = new HashMap<>();
     lambdaEnvMap.put("SERVICE_URL", theService.getLoadBalancer().getLoadBalancerDnsName());
@@ -188,7 +227,7 @@ public class CdkStack extends Stack {
             .create(fileEventBucket)
             .events(singletonList(EventType.OBJECT_CREATED))
             //.filters()
-        .build());
+            .build());
 
     //Outputs
     new CfnOutput(

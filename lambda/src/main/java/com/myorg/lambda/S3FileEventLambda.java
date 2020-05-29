@@ -15,6 +15,7 @@ import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.S3Event;
 import com.amazonaws.services.lambda.runtime.events.models.s3.S3EventNotification;
+import com.google.gson.Gson;
 
 @SuppressWarnings("unused")
 public class S3FileEventLambda implements RequestHandler<S3Event, String> {
@@ -28,16 +29,18 @@ public class S3FileEventLambda implements RequestHandler<S3Event, String> {
     String s3Key = record.getS3().getObject().getUrlDecodedKey();
     String msg = "Found new file: '" + s3Key + "', in bucket: '" + srcBucket + "'";
     System.out.println(msg);
-    FileEvent fileEvent = new FileEvent(s3Key);
 
     String serviceHost = System.getenv("SERVICE_URL");
     String serviceUrl = "https://www.jorgenlundberg.com/event/v1";
     System.out.println("Posting to the service on url: '" + serviceUrl + "'");
-    pokeSpringBootService(serviceUrl, fileEvent.asJsong());
+
+    String jsonPayload = new Gson().toJson(record);
+    System.out.println(jsonPayload);
+    callSpringBootService(serviceUrl, jsonPayload);
     return msg;
   }
 
-  private void pokeSpringBootService(String url, String jsonPayload) {
+  private void callSpringBootService(String url, String jsonPayload) {
 
     try (CloseableHttpClient httpclient = HttpClients.createDefault()) {
       HttpPost httppost = new HttpPost(url);
@@ -58,16 +61,5 @@ public class S3FileEventLambda implements RequestHandler<S3Event, String> {
     }
   }
 
-  private static class FileEvent {
-    private final String s3Key;
-
-    FileEvent(String s3Key) {
-      this.s3Key = s3Key;
-    }
-
-    String asJsong() {
-      return String.format("{ \"s3Key\": \"%s\" }", s3Key);
-    }
-  }
 
 }
